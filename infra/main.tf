@@ -1,5 +1,5 @@
 provider "aws" {
-  region = "sa-east-1" 
+  region  = "sa-east-1"
   profile = "pessoal" # Defina a região AWS apropriada
 }
 
@@ -44,7 +44,7 @@ resource "aws_vpc" "example_vpc" {
 resource "aws_subnet" "public_subnet_1" {
   vpc_id            = aws_vpc.example_vpc.id
   cidr_block        = "10.0.1.0/24"
-  availability_zone = "sa-east-1a"  # Substitua pela AZ desejada
+  availability_zone = "sa-east-1a" # Substitua pela AZ desejada
   tags = {
     Name = "public-subnet-1a"
   }
@@ -53,7 +53,7 @@ resource "aws_subnet" "public_subnet_1" {
 resource "aws_subnet" "public_subnet_2" {
   vpc_id            = aws_vpc.example_vpc.id
   cidr_block        = "10.0.2.0/24"
-  availability_zone = "sa-east-1b"  # Substitua pela AZ desejada
+  availability_zone = "sa-east-1b" # Substitua pela AZ desejada
   tags = {
     Name = "public-subnet-1b"
   }
@@ -92,6 +92,36 @@ resource "aws_security_group" "ecs_sg" {
   }
 }
 
+# Criação do Application Load Balancer (ALB)
+resource "aws_lb" "example_alb" {
+  name               = "example-alb"
+  internal           = false
+  load_balancer_type = "application"
+  subnets            = [aws_subnet.public_subnet_1.id, aws_subnet.public_subnet_2.id]
+}
+
+# Criação do ALB Target Group
+resource "aws_lb_target_group" "example_target_group" {
+  name        = "example-target-group"
+  port        = 80
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.example_vpc.id
+  target_type = "ip"
+}
+
+# Anexar o ALB ao Target Group
+resource "aws_lb_listener" "example_listener" {
+  load_balancer_arn = aws_lb.example_alb.id
+  port              = "80"
+  protocol          = "HTTP"
+
+  default_action {
+    target_group_arn = aws_lb_target_group.example_target_group.id
+    type             = "forward"
+  }
+}
+
+
 # Criação do Cluster ECS
 resource "aws_ecs_cluster" "example_cluster" {
   name = "coders-cluster"
@@ -121,17 +151,23 @@ resource "aws_ecs_task_definition" "example_task" {
 
 # Criação do Serviço ECS
 resource "aws_ecs_service" "example_service" {
-  name  = "coders-service"
-  cluster = aws_ecs_cluster.example_cluster.id
+  name            = "coders-service"
+  cluster         = aws_ecs_cluster.example_cluster.id
   task_definition = aws_ecs_task_definition.example_task.arn
-  desired_count = 1
-  launch_type = "FARGATE"
+  desired_count   = 1
+  launch_type     = "FARGATE"
 
-    network_configuration {
-        subnets = [aws_subnet.public_subnet_1.id, aws_subnet.public_subnet_2.id]
-        security_groups = [aws_security_group.ecs_sg.id]
-        assign_public_ip = true
-    }
+  network_configuration {
+    subnets          = [aws_subnet.public_subnet_1.id, aws_subnet.public_subnet_2.id]
+    security_groups  = [aws_security_group.ecs_sg.id]
+    assign_public_ip = true
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.example_target_group.arn
+    container_name   = "coders-container"
+    container_port   = 3000
+  }
 }
 
 # Criação da Função de Execução do Task (Fargate)
